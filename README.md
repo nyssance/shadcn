@@ -13,5 +13,6 @@ bun run test
 Registry sources are never edited by hand and are excluded from formatting and linting. To follow upstream, bump
 the CLI version in `scripts/sync.ts`, run `bun run sync`, review the diff, and release.
 
-Releases: the package version is the shadcn CLI version (`bun run sync` writes it). Push tag `v<version>`; CI publishes
-with npm trusted publishing.
+Releases: the version follows the shadcn CLI that generated the sources (`bun run sync` sets it when the CLI is
+newer); repackaging the same CLI release bumps the patch. Push tag `v<version>`; CI publishes with npm trusted
+publishing.

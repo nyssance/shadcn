@@ -84,7 +84,23 @@ for (const [style, registryStyle] of Object.entries(upstream.styles)) {
       })
     )
     run(work, ["bun", "add", "react", "react-dom"])
-    run(work, ["bunx", upstream.cli, "add", "--all", "--yes"], 4)
+    // One `shadcn add <item>` per registry item, as an application adds them. `add --all` skips some items
+    // (sonner in 4.23.0), and a multi-item add applies the rsc transform nondeterministically to shared files.
+    const index = (await (await fetch(`https://ui.shadcn.com/r/styles/${registryStyle}/registry.json`)).json()) as {
+      items: { name: string; type: string; files?: unknown[] }[]
+    }
+    const items = index.items.filter((item) => ["registry:ui", "registry:hook", "registry:lib"].includes(item.type))
+    for (const item of items) run(work, ["bunx", upstream.cli, "add", item.name, "--yes", "--overwrite"], 4)
+    for (const item of items) {
+      const detail = (await (
+        await fetch(`https://ui.shadcn.com/r/styles/${registryStyle}/${item.name}.json`)
+      ).json()) as { files?: { path: string }[] }
+      for (const file of detail.files ?? []) {
+        const name = file.path.split("/").pop()!
+        if (!walk(join(work, "src")).some((written) => written.endsWith(`/${name}`)))
+          throw new Error(`${registryStyle}: CLI did not write ${item.name} (${name})`)
+      }
+    }
     const files = [...snapshot(join(work, "src")).keys()].filter(
       (file) => /\.(tsx?|css)$/.test(file) && file !== "index.css" && file !== "lib/utils.ts"
     )
@@ -123,8 +139,10 @@ const pkg = JSON.parse(readFileSync(path, "utf8")) as {
   version: string
   dependencies: Record<string, string>
 }
-// The package version is the shadcn CLI version that generated it.
-pkg.version = upstream.cli.slice(upstream.cli.lastIndexOf("@") + 1)
+// The package version follows the shadcn CLI that generated it. npm never reuses a version, so a repackage of
+// the same CLI release bumps the patch by hand; a newer CLI release resets it to the CLI version.
+const cliVersion = upstream.cli.slice(upstream.cli.lastIndexOf("@") + 1)
+if (Bun.semver.order(cliVersion, pkg.version) > 0) pkg.version = cliVersion
 for (const dependency of dependencies) {
   if (installed.has(dependency)) continue
   const latest = (await (await fetch(`https://registry.npmjs.org/${dependency}/latest`)).json()) as { version: string }

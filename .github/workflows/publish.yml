@@ -1,0 +1,40 @@
+name: Publish
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      - name: Verify tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: bun -e 'if (process.env.RELEASE_TAG !== `v${(await Bun.file("packages/shadcn/package.json").json()).version}`) process.exit(1)'
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bun run test
+      - run: npm publish --access public --provenance
+        working-directory: packages/shadcn

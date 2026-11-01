@@ -27,13 +27,16 @@ export function shadcn(options: ShadcnOptions): Plugin {
     enforce: "pre",
     async resolveId(source, importer, resolveOptions) {
       if (!source.startsWith("@/")) return null
-      const rest = source.slice(2)
+      // Keep Vite queries such as `?react`, `?url` or `?worker` on the resolved file.
+      const queryStart = source.indexOf("?")
+      const query = queryStart === -1 ? "" : source.slice(queryStart)
+      const rest = source.slice(2, queryStart === -1 ? undefined : queryStart)
       const own = EXTENSIONS.map((extension) => join(src, rest + extension)).find(
         (file) => existsSync(file) && statSync(file).isFile()
       )
-      if (own) return own
+      if (own) return own + query
       for (const name of packages) {
-        const resolved = await this.resolve(`${name}/${options.style}/${rest}`, importer, {
+        const resolved = await this.resolve(`${name}/${options.style}/${rest}${query}`, importer, {
           ...resolveOptions,
           skipSelf: true
         })

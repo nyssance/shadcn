@@ -52,6 +52,11 @@ test("the vite plugin prefers the application's own file, then the package", asy
     expect(await resolveId.call(context, "@/components/ui/dialog", undefined, {})).toEqual({
       id: "/resolved/@nyssance/shadcn/vega/components/ui/dialog"
     })
+    mkdirSync(join(app, "src/components/icons"), { recursive: true })
+    writeFileSync(join(app, "src/components/icons/logo.svg"), "<svg/>\n")
+    expect(await resolveId.call(context, "@/components/icons/logo.svg?react", undefined, {})).toBe(
+      `${join(app, "src/components/icons/logo.svg")}?react`
+    )
     expect(await resolveId.call(context, "react", undefined, {})).toBeNull()
     expect(requests).toEqual(["@nyssance/shadcn/vega/components/ui/dialog"])
   } finally {

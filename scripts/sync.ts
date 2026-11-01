@@ -120,8 +120,11 @@ for (const [style, registryStyle] of Object.entries(upstream.styles)) {
 
 const path = join(repo, "packages/shadcn/package.json")
 const pkg = JSON.parse(readFileSync(path, "utf8")) as {
+  version: string
   dependencies: Record<string, string>
 }
+// The package version is the shadcn CLI version that generated it.
+pkg.version = upstream.cli.slice(upstream.cli.lastIndexOf("@") + 1)
 for (const dependency of dependencies) {
   if (installed.has(dependency)) continue
   const latest = (await (await fetch(`https://registry.npmjs.org/${dependency}/latest`)).json()) as { version: string }

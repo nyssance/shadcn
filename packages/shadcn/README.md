@@ -31,6 +31,10 @@ export default defineConfig({
 })
 ```
 
+The plugin also hands Vite's dependency scan the package path, so the components are prebundled under the same id
+the dev server resolves and a page never reloads to optimize a component's dependencies on first load. Do not list
+`@nyssance/shadcn` in `optimizeDeps.exclude`.
+
 TypeScript: the same order, as path fallbacks.
 
 ```json

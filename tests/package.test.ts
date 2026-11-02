@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
+
+import { build, normalizePath } from "vite"
 
 import { shadcn } from "../packages/shadcn/dist/vite.js"
 
@@ -18,7 +20,7 @@ for (const style of styles) {
     const sources = walk(join(pkg, "src", style)).filter((file) => /\.tsx?$/.test(file))
     expect(sources.length).toBeGreaterThan(60)
     for (const source of sources) {
-      const name = relative(join(pkg, "src", style), source).replace(/\.tsx?$/, "")
+      const name = normalizePath(relative(join(pkg, "src", style), source)).replace(/\.tsx?$/, "")
       const module = (await import(`@nyssance/shadcn/${style}/${name}`)) as Record<string, unknown>
       expect(Object.keys(module).length).toBeGreaterThan(0)
       expect(readFileSync(join(pkg, "dist", style, `${name}.d.ts`), "utf8")).not.toContain('"@/')
@@ -47,7 +49,7 @@ test("the vite plugin prefers the application's own file, then the package", asy
     }
     const resolveId = plugin.resolveId as (this: unknown, id: string, importer?: string, options?: object) => unknown
     expect(await resolveId.call(context, "@/components/ui/button", undefined, {})).toBe(
-      join(app, "src/components/ui/button.tsx")
+      normalizePath(join(app, "src/components/ui/button.tsx"))
     )
     expect(await resolveId.call(context, "@/components/ui/dialog", undefined, {})).toEqual({
       id: "/resolved/@nyssance/shadcn/vega/components/ui/dialog"
@@ -55,7 +57,7 @@ test("the vite plugin prefers the application's own file, then the package", asy
     mkdirSync(join(app, "src/components/icons"), { recursive: true })
     writeFileSync(join(app, "src/components/icons/logo.svg"), "<svg/>\n")
     expect(await resolveId.call(context, "@/components/icons/logo.svg?react", undefined, {})).toBe(
-      `${join(app, "src/components/icons/logo.svg")}?react`
+      `${normalizePath(join(app, "src/components/icons/logo.svg"))}?react`
     )
     expect(await resolveId.call(context, "react", undefined, {})).toBeNull()
     expect(requests).toEqual(["@nyssance/shadcn/vega/components/ui/dialog"])
@@ -70,7 +72,7 @@ test("the dependency scan sees the package specifier the dev server resolves", a
     mkdirSync(join(app, "src/components/ui"), { recursive: true })
     writeFileSync(join(app, "src/components/ui/button.tsx"), "export const Button = 1\n")
     mkdirSync(join(app, "node_modules/@nyssance"), { recursive: true })
-    symlinkSync(pkg, join(app, "node_modules/@nyssance/shadcn"))
+    symlinkSync(pkg, join(app, "node_modules/@nyssance/shadcn"), "junction")
     const plugin = shadcn({ style: "vega", src: join(app, "src") })
     const config = (plugin.config as () => { optimizeDeps: { rolldownOptions: { plugins: { resolveId: Function }[] } } })()
     const [scan] = config.optimizeDeps.rolldownOptions.plugins
@@ -90,6 +92,36 @@ test("the dependency scan sees the package specifier the dev server resolves", a
     expect(await scan.resolveId.call(context, "@/features/missing", "/app/src/main.tsx", {})).toBeNull()
     expect(await scan.resolveId.call(context, "react", "/app/src/main.tsx", {})).toBeNull()
     expect(requests).toEqual(["@nyssance/shadcn/vega/components/ui/dialog"])
+  } finally {
+    rmSync(app, { recursive: true, force: true })
+  }
+})
+
+test("alias and relative imports share the same store in a Vite build", async () => {
+  const app = realpathSync(mkdtempSync(join(tmpdir(), "shadcn-store-")))
+  try {
+    const src = join(app, "src")
+    mkdirSync(src)
+    writeFileSync(join(src, "store.ts"), "export const state = { loading: true }\n")
+    writeFileSync(join(src, "gate.ts"), 'import { state } from "./store"; export const loading = () => state.loading\n')
+    writeFileSync(
+      join(src, "main.ts"),
+      'import { state } from "@/store"; import { loading } from "./gate"; state.loading = false; export const stuck = loading()\n'
+    )
+    const result = await build({
+      configFile: false,
+      root: app,
+      logLevel: "silent",
+      plugins: [shadcn({ style: "vega", src })],
+      build: { lib: { entry: join(src, "main.ts"), formats: ["es"] }, write: false, minify: false }
+    })
+    const output = Array.isArray(result) ? result[0] : result
+    if (!("output" in output)) throw new Error("Expected build output")
+    const entry = output.output.find((output) => output.type === "chunk" && output.isEntry)
+    if (!entry || entry.type !== "chunk") throw new Error("Missing entry chunk")
+    expect(Object.keys(entry.modules).filter((id) => id.endsWith("store.ts"))).toHaveLength(1)
+    const module = await import(`data:text/javascript;base64,${Buffer.from(entry.code).toString("base64")}`)
+    expect(module.stuck).toBe(false)
   } finally {
     rmSync(app, { recursive: true, force: true })
   }

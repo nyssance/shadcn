@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
-import type { Plugin, Rolldown } from "vite"
+import { normalizePath, type Plugin, type Rolldown } from "vite"
 
 export type ShadcnOptions = {
   /** The style directory, for example "vega" for the `base-vega` style in components.json. */
@@ -76,7 +76,7 @@ export function shadcn(options: ShadcnOptions): Plugin {
       if (!source.startsWith("@/")) return null
       const { rest, query } = parse(source)
       const own = ownFile(rest)
-      if (own) return own + query
+      if (own) return normalizePath(own) + query
       for (const name of packages) {
         const resolved = await this.resolve(`${name}/${options.style}/${rest}${query}`, importer, {
           ...resolveOptions,

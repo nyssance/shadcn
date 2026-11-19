@@ -19,5 +19,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   },
-  "packageManager": "bun@1.4.4"
+  "packageManager": "bun@1.4.5"
 }
